@@ -142,3 +142,28 @@ test('real transcript from this machine parses', { skip: !fs.existsSync('/root/.
   const conv = C.conversation(buf, { rich: true });
   assert.ok(conv.some(t => t.blocks.some(b => b.type === 'tool_use')));
 });
+
+test('claude.ai export: parse, bank as sessions, convert to transcript, import', () => {
+  const chats = require('../lib/chats');
+  const exp = [{ uuid: 'c0ffee00-0000-4000-8000-000000000001', name: 'Trip planning', created_at: '2026-05-01T10:00:00Z', updated_at: '2026-05-02T10:00:00Z', chat_messages: [
+    { uuid: 'm1', sender: 'human', text: 'Plan a trip to Kyoto in autumn', content: [{ type: 'text', text: 'Plan a trip to Kyoto in autumn' }], created_at: '2026-05-01T10:00:00Z', attachments: [{ file_name: 'notes.txt', extracted_content: 'budget 2000' }] },
+    { uuid: 'm2', sender: 'assistant', text: 'Here is a 5 day plan…', content: [{ type: 'text', text: 'Here is a 5 day plan…' }], created_at: '2026-05-01T10:01:00Z' }] },
+    { uuid: 'c0ffee00-0000-4000-8000-000000000002', name: '', chat_messages: [] }];
+  const file = path.join(tmp, 'conversations.json'); fs.writeFileSync(file, JSON.stringify(exp));
+  const list = chats.readExport(file);
+  assert.equal(list.length, 2); assert.equal(list[0].messages.length, 2); assert.match(list[0].messages[0].text, /budget 2000/);
+  const zw = new ZipWriter(); zw.add('conversations.json', JSON.stringify(exp)); zw.add('users.json', '[]'); zw.writeFile(path.join(tmp, 'export.zip'));
+  assert.equal(chats.readExport(path.join(tmp, 'export.zip')).length, 2);
+  const r = bank.bankChats(list, { cwd: CWD });
+  assert.equal(r.added, 1); assert.equal(r.skipped, 1);
+  const m = bank.meta(list[0].uuid);
+  assert.equal(m.chat, true); assert.equal(m.title, 'Trip planning'); assert.equal(m.userTurns, 1); assert.equal(m.cwd, CWD);
+  assert.equal(bank.search('kyoto').length, 1);
+  assert.equal(bank.bankChats(list, { cwd: CWD }).unchanged, 1);
+  const conv = C.conversation(bank.transcript(list[0].uuid));
+  assert.equal(conv.length, 2); assert.equal(conv[1].role, 'assistant');
+  const res = bank.importToAccount([list[0].uuid], { accountId: ACC, deviceId: DEV });
+  assert.equal(res.installed.length, 1);
+  assert.ok(fs.existsSync(path.join(C.projectsRoot(), C.cwdSlug(CWD), list[0].uuid + '.jsonl')));
+  assert.match(buildHandoff(bank.transcript(list[0].uuid), m), /Kyoto/);
+});

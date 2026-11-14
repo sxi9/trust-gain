@@ -9,6 +9,7 @@ const bank = require('./lib/bank');
 const { buildHandoff } = require('./lib/handoff');
 const { toMarkdown, toHtml } = require('./lib/exporters');
 const { scanSecrets } = require('./lib/secrets');
+const chats = require('./lib/chats');
 
 let win = null;
 let autoTimer = null;
@@ -59,7 +60,7 @@ ipcMain.handle('state', () => {
   const cfg = bank.loadConfig();
   return {
     accounts: d.accounts.map(a => ({ id: a.id, label: cfg.labels[a.id] || '', devices: a.devices, sessions: a.sessions.length, current: a.id === d.currentAccount })),
-    orphans: d.orphans.length, currentAccount: d.currentAccount, deviceHint: d.deviceHint, bankCount: bank.list().length,
+    orphans: d.orphans.length, currentAccount: d.currentAccount, deviceHint: d.deviceHint, bankCount: bank.list().length, chatCount: bank.list().filter(m => m.chat).length,
     config: cfg, claudeRunning: C.claudeAppRunning(), platform: process.platform, hostname: os.hostname(),
     paths: { bank: bank.bankRoot(), sessions: C.sessionsRoot(), projects: C.projectsRoot(), backups: C.backupsRoot() },
     maximized: win ? win.isMaximized() : false,
@@ -133,7 +134,10 @@ ipcMain.handle('bank:paths', (_e, paths) => {
     try {
       const st = fs.statSync(p);
       if (st.isDirectory()) msgs.push(summarizeResult(bank.bankFolder(p), path.basename(p)));
-      else if (p.toLowerCase().endsWith('.zip')) msgs.push(summarizeResult(bank.bankBundle(p), path.basename(p)));
+      else if (p.toLowerCase().endsWith('.zip')) {
+        let isExport = false; try { isExport = new (require('./lib/zip').ZipReader)(fs.readFileSync(p)).names().some(n => n.endsWith('conversations.json')); } catch {}
+        msgs.push(summarizeResult(isExport ? bank.bankChats(chats.readExport(p), { origin: 'claude.ai export' }) : bank.bankBundle(p), path.basename(p)));
+      } else if (p.toLowerCase().endsWith('conversations.json')) msgs.push(summarizeResult(bank.bankChats(chats.readExport(p), { origin: 'claude.ai export' }), path.basename(p)));
       else if (p.toLowerCase().endsWith('.jsonl')) {
         const cliId = path.basename(p, '.jsonl');
         const r = bank.bankSession({ cliId, transcript: p, extraDir: path.join(path.dirname(p), cliId), origin: 'file:' + p });
@@ -145,6 +149,33 @@ ipcMain.handle('bank:paths', (_e, paths) => {
   progress(message);
   return { message };
 });
+ipcMain.handle('chats:export', async (_e, file) => {
+  if (!file) {
+    const r = await dialog.showOpenDialog(win, { title: 'Pick the claude.ai data export (.zip) or its conversations.json', properties: ['openFile'], filters: [{ name: 'Export', extensions: ['zip', 'json'] }] });
+    if (r.canceled || !r.filePaths.length) return null;
+    file = r.filePaths[0];
+  }
+  progress('Reading ' + path.basename(file));
+  const list = chats.readExport(file);
+  const res = bank.bankChats(list, { origin: 'claude.ai export' });
+  const msg = summarizeResult(res, `${list.length} chats from export`);
+  progress(msg);
+  return { ...res, message: msg };
+});
+ipcMain.handle('chats:sync', async (_e, opts) => {
+  const cfg = bank.loadConfig();
+  const key = (opts && opts.sessionKey) || cfg.sessionKey;
+  if (!key) return { error: 'No session key. Paste the sessionKey cookie from a signed-in claude.ai browser tab in Settings.' };
+  try {
+    const r = await chats.fetchLive(key, { onProgress: progress, since: opts && opts.all ? 0 : cfg.chatsLastSync, orgId: cfg.chatsOrg || null });
+    const res = bank.bankChats(r.chats, { origin: 'claude.ai:' + (r.org.name || r.org.uuid) });
+    const c2 = bank.loadConfig(); c2.chatsLastSync = Date.now(); c2.chatsOrg = r.org.uuid; if (opts && opts.sessionKey) c2.sessionKey = opts.sessionKey; bank.saveConfig(c2);
+    const msg = summarizeResult(res, `claude.ai chats (${r.total} in Recents)`);
+    progress(msg);
+    return { ...res, message: msg };
+  } catch (e) { progress('Sync failed: ' + e.message); return { error: e.message }; }
+});
+ipcMain.handle('open:url', (_e, url) => { if (/^https:\/\/claude\.ai\//.test(url)) shell.openExternal(url); });
 ipcMain.handle('bank:remove', async (_e, ids) => {
   const r = await dialog.showMessageBox(win, { type: 'warning', buttons: ['Move to trash', 'Cancel'], defaultId: 1, cancelId: 1,
     message: `Remove ${ids.length} session(s) from the bank?`, detail: `They go to ${path.join(bank.bankRoot(), 'trash')}. Live copies in Claude are not touched.` });

@@ -26,6 +26,7 @@
     <button class="nav active" data-scope="all">Everything <span class="n" id="n-all">0</span></button>
     <button class="nav" data-scope="bank">In the bank <span class="n" id="n-bank">0</span></button>
     <button class="nav" data-scope="unbanked">On this PC, not banked <span class="n" id="n-unbanked">0</span></button>
+    <button class="nav" data-scope="chats">claude.ai chats <span class="n" id="n-chats">0</span></button>
     <div class="section">Accounts on this PC</div>
     <div id="accounts"></div>
     <div class="section">Add to the bank</div>
@@ -33,6 +34,10 @@
     <button class="act" id="add-folder">Add a .claude folder…</button>
     <button class="act" id="add-bundle">Add a bundle .zip…</button>
     <div class="hint">or drop folders, bundles or .jsonl files anywhere on this window</div>
+    <div class="section">claude.ai chats (Recents)</div>
+    <button class="act" id="chats-sync">Sync Recents from claude.ai</button>
+    <button class="act" id="chats-export">Import a data export…</button>
+    <div class="hint">Sync needs your claude.ai session key (Settings). The export comes from claude.ai Settings › Privacy › Export data.</div>
     <div class="grow"></div>
     <button class="act" id="open-bank">Open bank folder</button>
     <button class="act" id="settings">Settings &amp; backups</button>
@@ -77,6 +82,7 @@
           <button id="d-import">Import to account…</button>
           <button id="d-resume" title="Opens a terminal running claude --resume in the working folder">Resume in terminal</button>
           <button id="d-handoff" title="Copies a prompt holding the facts and the last turns, for a new chat anywhere">Copy handoff prompt</button>
+          <button id="d-open-chat" class="hidden">Open on claude.ai</button>
           <div class="menu">
             <button id="d-export">Export ▾</button>
             <div class="menu-items">
@@ -137,6 +143,13 @@
     <div class="grid">
       <label class="chk"><input type="checkbox" id="s-auto"> bank changed sessions automatically every <input type="number" id="s-min" min="1" max="1440" style="width:60px"> minutes</label>
       <label class="chk"><input type="checkbox" id="s-memory"> also bank project memory</label>
+    </div>
+    <h3>claude.ai chats</h3>
+    <div class="grid">
+      <label>Session key <input type="password" id="s-key" placeholder="sessionKey cookie value (sk-ant-sid01-…)" style="flex:1"></label>
+      <div class="muted small">From a signed-in claude.ai tab: DevTools › Application › Cookies › claude.ai › <code>sessionKey</code>. Stored only in the bank's config.json on this PC. Leave empty to use the data export instead.</div>
+      <label>Folder chats run in when resumed <input type="text" id="s-chatcwd" placeholder="defaults to your home folder"><button id="s-chatcwd-pick">Pick…</button></label>
+      <label class="chk"><input type="checkbox" id="s-syncall"> next sync refetches every chat, not only ones changed since the last sync</label>
     </div>
     <h3>Account labels</h3>
     <div id="s-labels"></div>

@@ -30,6 +30,9 @@ for (const [id, title, n, cwd, x] of sessions) {
 }
 C.writeFile(path.join(C.projectsRoot(), 'orphan-proj', 'bbbb2222-0000-0000-0000-000000000009.jsonl'), mk('bbbb2222-0000-0000-0000-000000000009', 2, '/tmp/scratch', 'orphan'));
 fs.writeFileSync(C.configFile(), JSON.stringify({ lastKnownAccountUuid: ACC }));
+const chatsLib = require('../lib/chats');
+bank.bankChats(chatsLib.normalize([{ uuid: 'c0ffee00-0000-4000-8000-00000000aaaa', name: 'Kyoto trip ideas', created_at: '2026-05-01T10:00:00Z', updated_at: '2026-05-02T10:00:00Z', chat_messages: [
+  { uuid: 'm1', sender: 'human', text: 'Plan a trip to Kyoto in autumn', created_at: '2026-05-01T10:00:00Z' }, { uuid: 'm2', sender: 'assistant', text: 'Day 1: Fushimi Inari at dawn…', created_at: '2026-05-01T10:01:00Z' }] }]), { cwd: '/home/me' });
 
 const handlers = {
   'state': () => { const d = C.discoverAll(); const cfg = bank.loadConfig(); return { accounts: d.accounts.map(a => ({ id: a.id, label: cfg.labels[a.id] || '', devices: a.devices, sessions: a.sessions.length, current: a.id === d.currentAccount })), orphans: d.orphans.length, currentAccount: d.currentAccount, deviceHint: d.deviceHint, bankCount: bank.list().length, config: cfg, claudeRunning: false, platform: process.platform, hostname: os.hostname(), paths: { bank: bank.bankRoot(), sessions: C.sessionsRoot(), projects: C.projectsRoot(), backups: C.backupsRoot() }, maximized: false }; },
@@ -40,6 +43,7 @@ const handlers = {
   'bank:one': (refs) => { const live = handlers['live:list'](); let n = 0; for (const r of refs) { const s = live.find(x => x.cliId === r.cliId); if (s) { bank.bankSession({ cliId: s.cliId, transcript: s.transcript, record: s.recordFile ? C.readJson(s.recordFile) : null, account: s.account, device: s.device }); n++; } } return { message: `Banked ${n}` }; },
   'import': (ids, opts) => bank.importToAccount(ids, opts), 'handoff': (id) => buildHandoff(bank.transcript(id), bank.meta(id)), 'secrets': (id) => scanSecrets(bank.transcript(id)),
   'config': (patch) => { const cfg = bank.loadConfig(); if (patch) { Object.assign(cfg, patch); bank.saveConfig(cfg); } return cfg; }, 'backups:list': () => C.listBackups(), 'win': () => false,
+  'open:url': () => {}, 'chats:export': () => null, 'chats:sync': () => ({ error: 'stub' }),
   'bank:remove': (ids) => ({ removed: ids.filter(i => bank.remove(i)).length }), 'export:bundle': (ids) => bank.exportBundle(ids, path.join(tmp, 'out.zip')), 'open:claude': () => 'stub', 'resume': () => ({ ok: true, message: 'stub' }),
 };
 
@@ -49,15 +53,22 @@ const handlers = {
   await page.exposeFunction('__ipc', (ch, ...args) => handlers[ch] ? handlers[ch](...args) : (() => { throw new Error('no handler ' + ch); })());
   await page.addInitScript(() => {
     const call = (ch, ...a) => window.__ipc(ch, ...a);
-    window.bank = { state: () => call('state'), live: () => call('live:list'), list: () => call('bank:list'), search: (q, o) => call('bank:search', q, o), session: r => call('session:get', r), bankAll: () => call('bank:all'), bankOne: r => call('bank:one', r), bankFolder: () => null, bankBundle: () => null, bankPaths: () => ({ message: 'stub' }), remove: ids => call('bank:remove', ids), importTo: (ids, o) => call('import', ids, o), exportOne: () => null, exportBundle: ids => call('export:bundle', ids), handoff: id => call('handoff', id), secrets: id => call('secrets', id), resume: (a, b) => call('resume', a, b), openClaude: () => call('open:claude'), openPath: () => true, openBank: () => {}, pickFolder: () => null, config: p => call('config', p), backups: () => call('backups:list'), restore: () => ['stub'], win: op => call('win', op), pathOf: () => '', onProgress: () => {}, onRefresh: () => {} };
+    window.bank = { state: () => call('state'), live: () => call('live:list'), list: () => call('bank:list'), search: (q, o) => call('bank:search', q, o), session: r => call('session:get', r), bankAll: () => call('bank:all'), bankOne: r => call('bank:one', r), bankFolder: () => null, bankBundle: () => null, bankPaths: () => ({ message: 'stub' }), remove: ids => call('bank:remove', ids), chatsExport: () => call('chats:export'), chatsSync: o => call('chats:sync', o), openUrl: u => call('open:url', u), importTo: (ids, o) => call('import', ids, o), exportOne: () => null, exportBundle: ids => call('export:bundle', ids), handoff: id => call('handoff', id), secrets: id => call('secrets', id), resume: (a, b) => call('resume', a, b), openClaude: () => call('open:claude'), openPath: () => true, openBank: () => {}, pickFolder: () => null, config: p => call('config', p), backups: () => call('backups:list'), restore: () => ['stub'], win: op => call('win', op), pathOf: () => '', onProgress: () => {}, onRefresh: () => {} };
   });
   const errors = []; page.on('pageerror', e => errors.push(e.message)); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
   await page.goto('file://' + path.join(__dirname, '..', 'renderer', 'index.html'));
   await page.waitForSelector('.row');
+  await page.click('#bank-all'); await page.waitForFunction(() => document.querySelectorAll('.pill.ok').length >= 5);
   const check = async (cond, msg) => { if (!(await cond())) throw new Error('FAIL: ' + msg); console.log('ok  ' + msg); };
-  await check(async () => (await page.$$('.row')).length === 4, '4 sessions listed (3 accounts + 1 orphan) after first-run auto bank');
-  await check(async () => (await page.$$('.pill.ok')).length === 4, 'all four banked on first run');
+  await check(async () => (await page.$$('.row')).length === 5, '5 listed (3 account sessions + 1 orphan + 1 claude.ai chat)');
+  await check(async () => (await page.$$('.pill.ok')).length === 5, 'all banked after Bank everything');
+  await page.click('.nav[data-scope=chats]'); await page.waitForTimeout(200);
+  await check(async () => (await page.$$('.row')).length === 1, 'chats scope shows the chat');
   await page.click('.row >> nth=0'); await page.waitForSelector('.turn');
+  await check(async () => !(await page.$eval('#d-open-chat', e => e.classList.contains('hidden'))), 'Open on claude.ai button shown for a chat');
+  await page.screenshot({ path: path.join(process.env.SHOT_DIR || os.tmpdir(), 'context-bank-chat.png') });
+  await page.click('.nav[data-scope=all]'); await page.waitForTimeout(200);
+  await page.click('.row >> nth=1'); await page.waitForSelector('details.tool');
   await check(async () => (await page.$$('.turn')).length >= 6, 'chat turns rendered');
   await check(async () => (await page.$$('details.tool')).length >= 6, 'tool calls shown');
   await page.fill('#q', 'pineapple'); await page.waitForTimeout(400);

@@ -25,6 +25,7 @@ node test/ui-smoke.js   # renders the UI in headless Chromium (needs playwright)
 |---|---|
 | **Bank** | A local, account-independent copy of every session: sidebar record, transcript, custom title, subagent transcripts, project memory. Lives in `~/.context-bank/`. Survives sign-outs, account switches and deleted sidebar entries. |
 | **Sources** | Everything Claude Desktop lists for every account, plus **orphan transcripts** in `~/.claude/projects` that no account points at. Also any folder you drop on the window (a copied `.claude` folder, a `projects` folder, a `claude-code-sessions` store from another PC, a USB stick) and any bundle `.zip`. |
+| **claude.ai chats (Recents)** | The regular chats from Claude Desktop's and claude.ai's Recents list. Two ways in: *Sync Recents from claude.ai* with your browser session key (Settings), which pulls every chat and later only the ones that changed, or *Import a data export* (claude.ai Settings › Privacy › Export data, the zip or its conversations.json). Each chat becomes a Code-style transcript, so it is searched, read, imported and resumed like any session, and *Open on claude.ai* jumps to the original. |
 | **Auto bank** | Every few minutes (default 5) changed sessions are banked again. Re-banking merges by message id, so nothing is lost when a session continues on either side. |
 | **Search** | One box searches title, folder, first request, last reply, branch and model instantly, and, with *in messages* on, the full text of every conversation. Results show a highlighted snippet. |
 | **Chat viewer** | Each session's conversation with user and Claude turns, collapsible tool calls, results and thinking blocks, the files it touched, and all the metadata. |
@@ -79,6 +80,7 @@ main.js              Electron main process: frameless window, IPC, terminal laun
 preload.js           the window.bank API exposed to the page
 lib/claude.js        Claude's on-disk layout: discovery, transcript parsing, merge, install
 lib/bank.js          the bank: store, search, bank from live / folder / bundle, export, import
+lib/chats.js         claude.ai chats: data export parser, live pull, chat to transcript
 lib/handoff.js       handoff prompt builder
 lib/exporters.js     Markdown and HTML export
 lib/secrets.js       secret scan
@@ -88,6 +90,12 @@ test/bank.test.js    end-to-end tests on a temporary store
 ```
 
 ## Caveats
+
+- The live chat sync calls the same undocumented endpoints the claude.ai web app uses, with
+  your `sessionKey` cookie. They can change or be blocked; the data export route always works.
+  The key is stored in the bank's config.json on this PC only. Clear it in Settings when done.
+- A chat turned into a transcript holds only text turns. Resuming it with Claude Code gives
+  Claude the whole conversation, but tools and artifacts from the web chat are text only.
 
 - Relies on an undocumented on-disk layout. An app update could change it. Backups are written
   before every import.

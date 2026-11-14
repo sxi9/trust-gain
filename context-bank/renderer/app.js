@@ -39,6 +39,7 @@ function renderRail() {
   $('#n-all').textContent = S.sessions.length;
   $('#n-bank').textContent = S.sessions.filter(s => s.banked).length;
   $('#n-unbanked').textContent = S.sessions.filter(s => !s.banked && s.hasTranscript !== false).length;
+  $('#n-chats').textContent = S.sessions.filter(s => s.chat).length;
   const acc = $('#accounts'); acc.innerHTML = '';
   for (const a of st.accounts) {
     const b = document.createElement('button'); b.className = 'nav' + (S.account === a.id ? ' active' : ''); b.dataset.account = a.id;
@@ -55,6 +56,7 @@ async function applyFilter() {
   let list = S.sessions;
   if (S.scope === 'bank') list = list.filter(s => s.banked);
   if (S.scope === 'unbanked') list = list.filter(s => !s.banked);
+  if (S.scope === 'chats') list = list.filter(s => s.chat);
   if (S.account === 'orphan') list = list.filter(s => s.orphan || (s.live && s.live.orphan));
   else if (S.account) list = list.filter(s => (s.liveAccounts || []).includes(S.account) || s.account === S.account);
   if (!S.archived) list = list.filter(s => !s.archived);
@@ -85,7 +87,7 @@ function renderRows() {
     if (snip) snip = esc(snip);
     if (snip) for (const w of words) snip = snip.replace(new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'ig'), m => `<mark>${m}</mark>`);
     d.innerHTML = `<input type="checkbox" ${S.sel.has(s.cliId) ? 'checked' : ''}>
-      <div><div class="t">${esc(s.title)}${s.banked ? '<span class="pill ok">banked</span>' : '<span class="pill warn">not banked</span>'}${s.live ? '' : '<span class="pill">bank only</span>'}${s.orphan || (s.live && s.live.orphan) ? '<span class="pill">no record</span>' : ''}${accLabel ? `<span class="pill acc">${esc(accLabel)}</span>` : ''}</div>
+      <div><div class="t">${esc(s.title)}${s.banked ? '<span class="pill ok">banked</span>' : '<span class="pill warn">not banked</span>'}${s.chat ? '<span class="pill acc">claude.ai chat</span>' : s.live ? '' : '<span class="pill">bank only</span>'}${s.orphan || (s.live && s.live.orphan) ? '<span class="pill">no record</span>' : ''}${accLabel ? `<span class="pill acc">${esc(accLabel)}</span>` : ''}</div>
       <div class="s">${esc(shortPath(s.cwd))}${s.model ? ' · ' + esc(s.model.replace(/^claude-/, '')) : ''}</div>${snip ? `<div class="snip">${snip}</div>` : ''}</div>
       <div class="r">${esc(fmtDate(s.lastActivityMs))}<br>${s.userTurns != null ? s.userTurns + ' turns · ' : ''}${s.sizeKB >= 0 ? s.sizeKB + ' KB' : ''}</div>`;
     frag.appendChild(d);
@@ -126,6 +128,8 @@ async function openSession(cliId, quiet) {
   if (m.origins && m.origins.length) bits.push(`from ${esc(m.origins.join(', '))}`);
   $('#d-meta').innerHTML = bits.join('<span class="muted"> · </span>');
   $('#d-bank').textContent = m.banked ? 'Re-bank now' : 'Bank now';
+  $('#d-open-chat').classList.toggle('hidden', !m.chatUrl);
+  $('#d-bank').classList.toggle('hidden', !!m.chat);
   $('#d-takeover').disabled = !S.state.currentAccount;
   $('#d-takeover').title = S.state.currentAccount ? 'Import into the current account, then open Claude Desktop' : 'No current account found in Claude Desktop config';
   renderChat();
@@ -211,6 +215,7 @@ async function runImport(dryRun) {
 // ---------------------------------------------------------------- settings dialog
 async function openSettings() {
   const cfg = await window.bank.config();
+  $('#s-key').value = cfg.sessionKey || ''; $('#s-chatcwd').value = cfg.chatsCwd || ''; $('#s-syncall').checked = !!cfg.syncAll;
   $('#s-auto').checked = !!cfg.autoBank; $('#s-min').value = cfg.autoBankMinutes || 5; $('#s-memory').checked = cfg.includeMemory !== false;
   $('#s-labels').innerHTML = S.state.accounts.map(a => `<div class="lbl"><code title="${esc(a.id)}">${esc(shortId(a.id))}</code><input type="text" data-id="${esc(a.id)}" value="${esc(cfg.labels[a.id] || '')}" placeholder="e.g. work, personal"></div>`).join('') || '<div class="muted small">No accounts found.</div>';
   $('#s-sources').textContent = (cfg.sources || []).join('\n') || 'none yet';
@@ -281,6 +286,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     const msg = await window.bank.openClaude(); status(msg); refresh();
   };
   $('#d-import').onclick = () => openImport([S.active]);
+  $('#d-open-chat').onclick = () => window.bank.openUrl(S.detail.meta.chatUrl);
+  $('#chats-export').onclick = async () => { const r = await window.bank.chatsExport(); if (r) { status(r.message); refresh(); } };
+  $('#chats-sync').onclick = async () => {
+    const cfg = await window.bank.config();
+    if (!cfg.sessionKey) { openSettings(); status('Paste your claude.ai session key first, then press Sync again.'); return; }
+    $('#chats-sync').disabled = true; status('Syncing Recents from claude.ai…');
+    const r = await window.bank.chatsSync({ all: !!cfg.syncAll });
+    $('#chats-sync').disabled = false; status(r.error ? 'Sync failed: ' + r.error : r.message); refresh();
+  };
   $('#d-resume').onclick = async () => { const r = await window.bank.resume(S.active, S.detail.meta.cwdExists ? S.detail.meta.cwd : null); status(r.message); };
   $('#d-handoff').onclick = async () => { const t = await window.bank.handoff(S.active, true); status('Handoff prompt copied to the clipboard'); showText('Handoff prompt (copied)', t); };
   $('#d-bank').onclick = async () => { const r = await window.bank.bankOne([{ cliId: S.active }]); status(r.message); refresh(); };
@@ -300,9 +314,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('#i-dry').onclick = () => runImport(true);
   $('#i-go').onclick = () => runImport(false);
   $('#s-close').onclick = () => $('#m-settings').classList.add('hidden');
+  $('#s-chatcwd-pick').onclick = async () => { const p = await window.bank.pickFolder(); if (p) $('#s-chatcwd').value = p; };
   $('#s-save').onclick = async () => {
     const labels = {}; $$('#s-labels input').forEach(i => { if (i.value.trim()) labels[i.dataset.id] = i.value.trim(); });
-    await window.bank.config({ autoBank: $('#s-auto').checked, autoBankMinutes: Math.max(1, Number($('#s-min').value) || 5), includeMemory: $('#s-memory').checked, labels });
+    await window.bank.config({ sessionKey: $('#s-key').value.trim(), chatsCwd: $('#s-chatcwd').value.trim(), syncAll: $('#s-syncall').checked, autoBank: $('#s-auto').checked, autoBankMinutes: Math.max(1, Number($('#s-min').value) || 5), includeMemory: $('#s-memory').checked, labels });
     $('#m-settings').classList.add('hidden'); status('Settings saved'); refresh();
   };
   $('#s-backups').addEventListener('click', async e => { const b = e.target.closest('[data-restore]'); if (!b) return; const log = await window.bank.restore(b.dataset.restore); showText('Restore', log.join('\n')); refresh(); });

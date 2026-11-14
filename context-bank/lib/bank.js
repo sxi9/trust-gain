@@ -14,13 +14,14 @@ const path = require('path');
 const crypto = require('crypto');
 const C = require('./claude');
 const { ZipWriter, ZipReader } = require('./zip');
+const chats = require('./chats');
 
 function bankRoot() { return process.env.CONTEXT_BANK_DIR || path.join(os.homedir(), '.context-bank'); }
 function sessionsDir() { return path.join(bankRoot(), 'sessions'); }
 function sessionDir(cliId) { return path.join(sessionsDir(), cliId); }
 function configPath() { return path.join(bankRoot(), 'config.json'); }
 
-const DEFAULT_CONFIG = { labels: {}, autoBank: true, autoBankMinutes: 5, lastAutoBank: 0, includeMemory: true, sources: [] };
+const DEFAULT_CONFIG = { labels: {}, autoBank: true, autoBankMinutes: 5, lastAutoBank: 0, includeMemory: true, sources: [], chatsCwd: '', sessionKey: '', chatsLastSync: 0, chatsOrg: '' };
 function loadConfig() { return { ...DEFAULT_CONFIG, ...(C.readJson(configPath(), {}) || {}) }; }
 function saveConfig(cfg) { C.writeFile(configPath(), JSON.stringify(cfg, null, 2)); return cfg; }
 
@@ -208,6 +209,25 @@ function bankBundle(zipPath) {
   return results;
 }
 
+// Bank claude.ai chats (from a data export file or a live pull) as sessions.
+function bankChats(list, { cwd, origin = 'claude.ai' } = {}) {
+  cwd = cwd || loadConfig().chatsCwd || chats.defaultCwd();
+  const results = { added: 0, merged: 0, unchanged: 0, skipped: 0, items: [], scanned: list.length };
+  for (const chat of list) {
+    if (!chat.messages.length) { results.skipped++; continue; }
+    const old = meta(chat.uuid);
+    const r = bankSession({ cliId: chat.uuid, transcriptBuf: chats.toTranscript(chat, (old && old.cwd) || cwd), record: old ? null : chats.toRecord(chat, cwd), origin, title: chat.name,
+      extraFiles: [{ rel: 'custom-title.json', buf: Buffer.from(JSON.stringify({ customTitle: chat.name })) }] });
+    if (r.status !== 'skip') {
+      const m = meta(chat.uuid); m.chat = true; m.chatUrl = `https://claude.ai/chat/${chat.uuid}`; m.title = chat.name || m.title; if (chat.project) m.project = chat.project;
+      C.writeFile(path.join(sessionDir(chat.uuid), 'meta.json'), JSON.stringify(m));
+    }
+    results[r.status === 'skip' ? 'skipped' : r.status]++;
+    if (r.status === 'added' || r.status === 'merged') results.items.push(r);
+  }
+  return results;
+}
+
 // Export banked sessions as a bundle zip (same layout as claude-session-transfer, so either tool loads it).
 function exportBundle(cliIds, outPath, { includeMemory = true } = {}) {
   const zw = new ZipWriter();
@@ -268,4 +288,4 @@ function importToAccount(cliIds, { accountId, deviceId, cwdMap = {}, newId = fal
 }
 
 module.exports = { bankRoot, sessionsDir, sessionDir, loadConfig, saveConfig, bankSession, list, has, meta, transcript, record,
-  extraFiles, textOf, search, remove, bankLive, bankFolder, bankBundle, exportBundle, importToAccount, plainText };
+  extraFiles, textOf, search, remove, bankLive, bankFolder, bankBundle, bankChats, exportBundle, importToAccount, plainText };
