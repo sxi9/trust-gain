@@ -14,10 +14,15 @@ cd context-bank
 npm install        # only dependency: electron
 npm start
 npm test           # library tests against a throwaway store
+npm run dist:win   # Windows: dist/builder/ContextBank-portable.exe (single file) + dist/ContextBank-win64.zip
 node test/ui-smoke.js   # renders the UI in headless Chromium (needs playwright) and screenshots it
 ```
 
 ![Context Bank](docs/screenshot-dark.png)
+
+Prebuilt Windows binaries come out of the **Context Bank Windows build** GitHub Actions
+workflow (Actions tab, download the `ContextBank-windows` artifact). The exe is unsigned, so
+SmartScreen shows "More info" > "Run anyway" the first time.
 
 ## What it does
 
