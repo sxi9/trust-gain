@@ -1,0 +1,14 @@
+{
+  "name": "context-bank",
+  "version": "0.1.0",
+  "description": "Context Bank: a borderless local window that banks every Claude Code session on this PC, searches them, and imports them into any Claude account so Claude can pick up where it left off.",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.js"
+  },
+  "devDependencies": {
+    "electron": "33.2.1"
+  }
+}
