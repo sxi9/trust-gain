@@ -26,7 +26,13 @@ function createWindow() {
   win.once('ready-to-show', () => {
     win.show();
     if (process.env.CONTEXT_BANK_SHOT) setTimeout(async () => {
-      try { const img = await win.webContents.capturePage(); fs.writeFileSync(process.env.CONTEXT_BANK_SHOT, img.toPNG()); } catch (e) { console.error(e); }
+      // dev aid: open the first session (and run a search if CONTEXT_BANK_SHOT_QUERY is set), capture, quit
+      try {
+        const q = process.env.CONTEXT_BANK_SHOT_QUERY || '';
+        await win.webContents.executeJavaScript(`(async()=>{const r=document.querySelector('.row');if(r){r.click();await new Promise(x=>setTimeout(x,1500));}
+          if(${JSON.stringify(q)}){const i=document.querySelector('#q');i.value=${JSON.stringify(q)};i.dispatchEvent(new Event('input'));await new Promise(x=>setTimeout(x,900));}})()`);
+        const img = await win.webContents.capturePage(); fs.writeFileSync(process.env.CONTEXT_BANK_SHOT, img.toPNG());
+      } catch (e) { console.error(e); }
       app.quit();
     }, 2500);
   });

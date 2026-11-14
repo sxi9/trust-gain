@@ -82,7 +82,8 @@ function renderRows() {
     const d = document.createElement('div'); d.className = 'row' + (S.active === s.cliId ? ' active' : ''); d.dataset.id = s.cliId;
     const accLabel = s.liveAccounts && s.liveAccounts.length ? s.liveAccounts.map(a => (S.state.accounts.find(x => x.id === a) || {}).label || shortId(a)).join(', ') : (s.account ? shortId(s.account) : '');
     let snip = S.snippets && S.snippets.get(s.cliId);
-    if (snip) for (const w of words) snip = esc(snip).replace(new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'ig'), m => `<mark>${m}</mark>`);
+    if (snip) snip = esc(snip);
+    if (snip) for (const w of words) snip = snip.replace(new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'ig'), m => `<mark>${m}</mark>`);
     d.innerHTML = `<input type="checkbox" ${S.sel.has(s.cliId) ? 'checked' : ''}>
       <div><div class="t">${esc(s.title)}${s.banked ? '<span class="pill ok">banked</span>' : '<span class="pill warn">not banked</span>'}${s.live ? '' : '<span class="pill">bank only</span>'}${s.orphan || (s.live && s.live.orphan) ? '<span class="pill">no record</span>' : ''}${accLabel ? `<span class="pill acc">${esc(accLabel)}</span>` : ''}</div>
       <div class="s">${esc(shortPath(s.cwd))}${s.model ? ' · ' + esc(s.model.replace(/^claude-/, '')) : ''}</div>${snip ? `<div class="snip">${snip}</div>` : ''}</div>
